@@ -3,6 +3,9 @@
   publish = "dist"
   functions = "netlify/functions"
 
+[functions]
+  node_bundler = "esbuild"
+
 # Proxy all /ccare-api/* calls through the serverless function
 [[redirects]]
   from = "/ccare-api/*"
