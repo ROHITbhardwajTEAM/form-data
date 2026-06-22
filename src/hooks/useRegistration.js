@@ -104,12 +104,6 @@ export function useRegistration() {
     } finally {
       setSubmitting(false);
     }
-
-    // useRegistration.js mein submitRegistration ke andar:
-    const allKeys = Object.keys(tokenData || {});
-    const matchedTokenKey = allKeys.find(key => key.toLowerCase().includes("token"));
-    const resolvedAPIToken = matchedTokenKey ? tokenData[matchedTokenKey] : undefined;
-
   }, [tokenData, sessionId]);
 
   return {
