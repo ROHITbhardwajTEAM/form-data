@@ -6,15 +6,15 @@
 [functions]
   node_bundler = "nft"
 
-# Route ALL /ccare-api/* calls to the proxy serverless function
-# The function reads event.rawUrl to get the exact original path + query string
+# Route ALL /ccare-api/* to the proxy function
+# Function uses event.rawUrl internally to determine the correct backend path
 [[redirects]]
   from = "/ccare-api/*"
   to = "/.netlify/functions/proxy"
   status = 200
   force = true
 
-# SPA fallback — React Router
+# SPA fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
