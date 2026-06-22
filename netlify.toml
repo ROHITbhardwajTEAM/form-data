@@ -4,16 +4,17 @@
   functions = "netlify/functions"
 
 [functions]
-  node_bundler = "esbuild"
+  node_bundler = "nft"
 
-# Proxy all /ccare-api/* calls through the serverless function
+# Route ALL /ccare-api/* calls to the proxy serverless function
+# The function reads event.rawUrl to get the exact original path + query string
 [[redirects]]
   from = "/ccare-api/*"
-  to = "/.netlify/functions/proxy/:splat"
+  to = "/.netlify/functions/proxy"
   status = 200
   force = true
 
-# SPA fallback — all other routes serve index.html
+# SPA fallback — React Router
 [[redirects]]
   from = "/*"
   to = "/index.html"
