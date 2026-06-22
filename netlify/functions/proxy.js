@@ -1,5 +1,5 @@
 // Netlify Function — proxy for C-Care API
-// Uses "node:" prefix on imports so esbuild treats them as Node built-ins (not polyfilled)
+// node: prefix ensures esbuild treats https as Node built-in (not polyfilled with fetch)
 
 import https from "node:https";
 import { URL } from "node:url";
@@ -23,23 +23,27 @@ export const handler = async (event) => {
   }
 
   try {
-    // Endpoint comes from ?_path=:splat (set by Netlify redirect rule)
-    // e.g. /ccare-api/GetDirectToken?UserID=xxx → _path="GetDirectToken", UserID="xxx"
-    const allParams = { ...(event.queryStringParameters || {}) };
-    const endpointPath = allParams._path || "";
-    delete allParams._path;
+    // ── PATH: get from event.rawUrl (the original browser URL, before Netlify redirect)
+    // event.rawUrl = "https://admirable-xxx.netlify.app/ccare-api/GetDirectToken?UserID=xxx"
+    const originalUrl = new URL(event.rawUrl);
+    const subPath = originalUrl.pathname.replace(/^\/ccare-api/, "");
+    // e.g. "/GetDirectToken"
 
-    // Re-encode params — encodeURIComponent correctly handles + / = in base64 UserID
+    // ── QUERY PARAMS: from event.queryStringParameters (decoded by Netlify)
+    // We re-encode each value with encodeURIComponent so + / = in base64 are safe
+    const allParams = { ...(event.queryStringParameters || {}) };
     const qs = Object.keys(allParams)
       .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(allParams[k])}`)
       .join("&");
 
-    const targetUrl = `${TARGET_BASE}/${endpointPath}${qs ? "?" + qs : ""}`;
+    // Combine correct path + correctly re-encoded query string
+    const targetUrl = `${TARGET_BASE}${subPath}${qs ? "?" + qs : ""}`;
+
     console.log(`[proxy] ${event.httpMethod} => ${targetUrl}`);
 
     const reqHeaders = {
       "Content-Type": "application/json",
-      Host: "mobileapp.c-care.mu",
+      Host: "mobileapp.c-care.mu:14443",
     };
     if (event.headers?.authorization) {
       reqHeaders.Authorization = event.headers.authorization;
@@ -56,13 +60,13 @@ export const handler = async (event) => {
           method: event.httpMethod || "GET",
           headers: reqHeaders,
           agent: httpsAgent,
-          timeout: 15000,
+          timeout: 20000,
         },
         (res) => {
           let data = "";
           res.on("data", (c) => { data += c; });
           res.on("end", () => {
-            console.log(`[proxy] Backend ${res.statusCode}: ${data.substring(0, 200)}`);
+            console.log(`[proxy] Backend ${res.statusCode}: ${data.substring(0, 300)}`);
             resolve({ status: res.statusCode, body: data });
           });
         }
@@ -74,7 +78,7 @@ export const handler = async (event) => {
       });
       req.on("timeout", () => {
         req.destroy();
-        reject(new Error("Backend connection timed out after 15s"));
+        reject(new Error("Backend timed out (20s)"));
       });
 
       if (event.body && event.httpMethod !== "GET") {
@@ -87,9 +91,13 @@ export const handler = async (event) => {
       req.end();
     });
 
-    return { statusCode: responseData.status, headers: CORS, body: responseData.body };
+    return {
+      statusCode: responseData.status,
+      headers: CORS,
+      body: responseData.body,
+    };
   } catch (err) {
-    console.error("[proxy] Handler error:", err.message);
+    console.error("[proxy] Error:", err.message);
     return {
       statusCode: 502,
       headers: CORS,
