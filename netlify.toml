@@ -6,15 +6,13 @@
 [functions]
   node_bundler = "nft"
 
-# Route ALL /ccare-api/* to the proxy function
-# Function uses event.rawUrl internally to determine the correct backend path
-[[redirects]]
-  from = "/ccare-api/*"
-  to = "/.netlify/functions/proxy"
-  status = 200
-  force = true
+# Edge function intercepts /ccare-api/* BEFORE any redirect
+# It runs on Deno at CDN edge — has direct access to original Request URL
+[[edge_functions]]
+  path = "/ccare-api/*"
+  function = "ccare-proxy"
 
-# SPA fallback
+# SPA fallback — React Router
 [[redirects]]
   from = "/*"
   to = "/index.html"
