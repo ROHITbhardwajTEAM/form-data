@@ -1,8 +1,8 @@
-// Netlify Function — ESM proxy for C-Care API
-// ESM import/export syntax works correctly with esbuild bundler
+// Netlify Function — proxy for C-Care API
+// Uses "node:" prefix on imports so esbuild treats them as Node built-ins (not polyfilled)
 
-import https from "https";
-import { URL } from "url";
+import https from "node:https";
+import { URL } from "node:url";
 
 const TARGET_BASE =
   "https://mobileapp.c-care.mu:14443/API/API/APIdigitalregistration";
@@ -23,20 +23,18 @@ export const handler = async (event) => {
   }
 
   try {
-    // Redirect passes endpoint via ?_path=:splat
-    // e.g. /ccare-api/GetDirectToken?UserID=xxx  →  function gets:
-    //   _path = "GetDirectToken", UserID = "xxx" (decoded by Netlify)
+    // Endpoint comes from ?_path=:splat (set by Netlify redirect rule)
+    // e.g. /ccare-api/GetDirectToken?UserID=xxx → _path="GetDirectToken", UserID="xxx"
     const allParams = { ...(event.queryStringParameters || {}) };
     const endpointPath = allParams._path || "";
     delete allParams._path;
 
-    // Re-encode remaining params — encodeURIComponent correctly encodes + / = from base64
+    // Re-encode params — encodeURIComponent correctly handles + / = in base64 UserID
     const qs = Object.keys(allParams)
       .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(allParams[k])}`)
       .join("&");
 
     const targetUrl = `${TARGET_BASE}/${endpointPath}${qs ? "?" + qs : ""}`;
-
     console.log(`[proxy] ${event.httpMethod} => ${targetUrl}`);
 
     const reqHeaders = {
@@ -49,55 +47,53 @@ export const handler = async (event) => {
 
     const responseData = await new Promise((resolve, reject) => {
       const parsed = new URL(targetUrl);
-      const options = {
-        hostname: parsed.hostname,
-        port: parseInt(parsed.port) || 443,
-        path: parsed.pathname + parsed.search,
-        method: event.httpMethod || "GET",
-        headers: reqHeaders,
-        agent: httpsAgent,
-        timeout: 15000,
-      };
 
-      const req = https.request(options, (res) => {
-        let data = "";
-        res.on("data", (c) => { data += c; });
-        res.on("end", () => {
-          console.log(`[proxy] Backend responded ${res.statusCode}: ${data.substring(0, 200)}`);
-          resolve({ status: res.statusCode, body: data });
-        });
-      });
+      const req = https.request(
+        {
+          hostname: parsed.hostname,
+          port: parseInt(parsed.port) || 443,
+          path: parsed.pathname + parsed.search,
+          method: event.httpMethod || "GET",
+          headers: reqHeaders,
+          agent: httpsAgent,
+          timeout: 15000,
+        },
+        (res) => {
+          let data = "";
+          res.on("data", (c) => { data += c; });
+          res.on("end", () => {
+            console.log(`[proxy] Backend ${res.statusCode}: ${data.substring(0, 200)}`);
+            resolve({ status: res.statusCode, body: data });
+          });
+        }
+      );
 
       req.on("error", (err) => {
-        console.error("[proxy] Connection error:", err.message);
+        console.error("[proxy] Connection error:", err.code, err.message);
         reject(err);
       });
       req.on("timeout", () => {
         req.destroy();
-        reject(new Error("Backend connection timed out"));
+        reject(new Error("Backend connection timed out after 15s"));
       });
 
       if (event.body && event.httpMethod !== "GET") {
-        const bodyStr = event.isBase64Encoded
-          ? Buffer.from(event.body, "base64").toString("utf-8")
-          : event.body;
-        req.write(bodyStr);
+        req.write(
+          event.isBase64Encoded
+            ? Buffer.from(event.body, "base64").toString("utf-8")
+            : event.body
+        );
       }
       req.end();
     });
 
-    return {
-      statusCode: responseData.status,
-      headers: CORS,
-      body: responseData.body,
-    };
+    return { statusCode: responseData.status, headers: CORS, body: responseData.body };
   } catch (err) {
-    // Return 502 with the actual error message so frontend can show it
     console.error("[proxy] Handler error:", err.message);
     return {
       statusCode: 502,
       headers: CORS,
-      body: JSON.stringify({ proxyError: err.message }),
+      body: JSON.stringify({ proxyError: err.message, code: err.code }),
     };
   }
 };
