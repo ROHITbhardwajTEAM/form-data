@@ -14,7 +14,8 @@ export async function getDirectToken() {
   });
 
   if (!response.ok) {
-    throw new Error(`Token request failed: ${response.status}`);
+    const errBody = await response.text().catch(() => "");
+    throw new Error(`Token request failed: ${response.status} | ${errBody.substring(0, 120)}`);
   }
 
   const rawText = await response.text();
@@ -112,7 +113,8 @@ export async function getCountryList() {
   });
 
   if (!response.ok) {
-    throw new Error(`Country list request failed: ${response.status}`);
+    const errBody = await response.text().catch(() => "");
+    throw new Error(`Country list request failed: ${response.status} | ${errBody.substring(0, 120)}`);
   }
 
   const rawText = await response.text();
